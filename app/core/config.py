@@ -1,0 +1,53 @@
+"""Configuracion central leida de variables de entorno (pydantic-settings)."""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Configuracion(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    entorno: str = "desarrollo"
+
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agenda"
+    redis_url: str = "redis://localhost:6379/0"
+
+    fernet_keys: str = ""
+    jwt_secret: str = ""
+    jwt_minutos_expiracion: int = 480
+
+    gemini_api_key: str = ""
+    gemini_model: str = ""
+
+    wa_access_token: str = ""
+    wa_phone_number_id: str = ""
+    wa_verify_token: str = ""
+    wa_app_secret: str = ""
+    wa_api_version: str = "v23.0"
+    wa_plantilla_cierre: str = "cierre_diario"
+    wa_plantilla_recordatorio: str = "recordatorio_tarea"
+    wa_plantilla_idioma: str = "es_MX"
+
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+
+    # Valores [DEFAULT] de SPEC
+    ia_historial_turnos: int = 10  # IA-04
+    ia_historial_ttl_seg: int = 7200  # IA-04
+    ia_max_iteraciones: int = 5  # IA-14
+    audio_max_segundos: int = 120  # IA-03
+    audio_max_bytes: int = 5_000_000  # IA-03
+    limite_mensajes_por_minuto: int = 20  # SEG-04
+    jornada_hora_inicio: int = 8  # IA-07
+    jornada_hora_fin: int = 20  # IA-07
+
+    @property
+    def lista_fernet_keys(self) -> list[str]:
+        return [k.strip() for k in self.fernet_keys.split(",") if k.strip()]
+
+
+@lru_cache
+def obtener_config() -> Configuracion:
+    return Configuracion()
