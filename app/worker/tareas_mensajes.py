@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 
-from app.integraciones.gemini.cliente import ClienteGemini
+from app.integraciones.gemini.cliente import ClienteGeminiPerezoso
 from app.integraciones.whatsapp.cliente import ClienteWhatsApp
 from app.servicios.mensajes import manejar_mensaje
 from app.worker import despacho
@@ -19,7 +19,7 @@ async def _procesar(mensaje: dict[str, Any]) -> None:
             redis=ctx.redis,
             mensaje=mensaje,
             wa=ClienteWhatsApp(http),
-            ia=ClienteGemini(),
+            ia=ClienteGeminiPerezoso(),
         )
     if resultado is not None:
         for id_cita in resultado.citas_creadas:

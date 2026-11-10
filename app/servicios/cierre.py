@@ -74,8 +74,8 @@ async def enviar_resumen_cierre(
     )
     # IA-17: se recuerda la pregunta para interpretar la respuesta del doctor en contexto.
     pregunta = (
-        f"Resumen del dia: {atendidas} citas atendidas, {sin_cerrar} sin cerrar y "
-        f"{citas_manana} citas para manana. ¿Hay pendientes o seguimientos que quieras registrar?"
+        f"Resumen del día: {atendidas} citas atendidas, {sin_cerrar} sin cerrar y "
+        f"{citas_manana} citas para mañana. ¿Hay pendientes o seguimientos que quieras registrar?"
     )
     await redis.set(clave_cierre_pendiente(doctor.id), pregunta, ex=TTL_PREGUNTA_CIERRE_SEG)
 

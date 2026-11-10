@@ -20,8 +20,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["flet[all]>=1.0"]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+# Web: flet + flet-web. Para escritorio instalar ademas flet-desktop.
+ui = ["flet>=1.0", "flet-web>=1.0"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "flet>=1.0", "flet-web>=1.0"]
 
 [build-system]
 requires = ["setuptools>=68"]
