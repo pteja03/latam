@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +43,16 @@ class Configuracion(BaseSettings):
     limite_mensajes_por_minuto: int = 20  # SEG-04
     jornada_hora_inicio: int = 8  # IA-07
     jornada_hora_fin: int = 20  # IA-07
+
+    @model_validator(mode="after")
+    def _exigir_secretos_en_produccion(self) -> "Configuracion":
+        """En produccion el servicio no arranca con secretos vacios o debiles."""
+        if self.entorno == "produccion":
+            if not self.lista_fernet_keys:
+                raise ValueError("FERNET_KEYS es obligatorio en produccion")
+            if len(self.jwt_secret) < 32:
+                raise ValueError("JWT_SECRET debe tener al menos 32 caracteres en produccion")
+        return self
 
     @property
     def lista_fernet_keys(self) -> list[str]:

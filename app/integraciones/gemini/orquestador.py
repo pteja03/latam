@@ -19,10 +19,10 @@ from app.servicios import agenda, alertas
 
 MARCA_NOTA_DE_VOZ = "[nota de voz]"
 RESPUESTA_LIMITE = (
-    "No pude completar tu instruccion de forma automatica. La pase a recepcion para que la "
+    "No pude completar tu instrucción de forma automática. La pasé a recepción para que la "
     "atiendan."
 )
-RESPUESTA_VACIA = "No entendi la instruccion. ¿Puedes repetirla con mas detalle?"
+RESPUESTA_VACIA = "No entendí la instrucción. ¿Puedes repetirla con más detalle?"
 
 
 @dataclass
@@ -122,7 +122,7 @@ async def procesar_instruccion(
         await alertas.crear(
             sesion,
             id_doctor=doctor.id,
-            mensaje_ia="La IA alcanzo el limite de pasos sin completar la instruccion.",
+            mensaje_ia="La IA alcanzó el límite de pasos sin completar la instrucción.",
             instruccion_original=entrada.texto or MARCA_NOTA_DE_VOZ,
             actor=auditoria.actor_ia(doctor.id),
         )

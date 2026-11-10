@@ -30,7 +30,8 @@
 - `ARQ-03` **worker** — Celery: IA, descarga de audio, Google Calendar, envío de WhatsApp.
 - `ARQ-04` **beat** — Celery Beat: cierre nocturno y recordatorios.
 - `ARQ-05` **ui** — Flet, consume `api_core` por HTTP con token.
-- `ARQ-06` **proxy** — Nginx o Traefik con TLS (HTTPS obligatorio para Meta y Google).
+- `ARQ-06` **proxy** — Traefik con TLS (HTTPS obligatorio para Meta y Google). Rutas: `/api` → api_core,
+  `/webhooks` → api_webhooks, resto → ui. Solo se levanta con el perfil `produccion` de Compose.
 
 ### 1.3 Estructura de carpetas
 ```
@@ -75,10 +76,11 @@ Todas las tablas incluyen `id` (UUID), `creado_en`, `actualizado_en`, `eliminado
   `EXCLUDE USING gist (id_doctor WITH =, tstzrange(fecha_hora_inicio, fecha_hora_fin) WITH &&) WHERE (estado <> 'cancelada' AND eliminado_en IS NULL)`.
   La aplicación captura la violación y devuelve "horario ocupado" con alternativas. (`SELECT FOR UPDATE`
   no basta porque no bloquea filas que aún no existen.)
-- `DAT-06` **Recordatorio**: `id_doctor`, `fecha_hora`, `descripcion`, `estado` (`pendiente` | `enviado` | `cancelado`).
-- `DAT-07` **AlertaRecepcion**: `id_doctor`, `mensaje_ia`, `instruccion_original`, `estado` (`pendiente` | `en_proceso` | `resuelta`),
+- `DAT-06` **Recordatorio**: `id_doctor`, `fecha_hora`, `descripcion` (cifrado), `estado` (`pendiente` | `enviado` | `cancelado`).
+- `DAT-07` **AlertaRecepcion**: `id_doctor`, `mensaje_ia` (cifrado), `instruccion_original` (cifrado), `estado` (`pendiente` | `en_proceso` | `resuelta`),
   `resuelta_por`, `resuelta_en`.
-- `DAT-08` **UsuarioRecepcion**: `nombre`, `correo`, `hash_password`, `rol` (`recepcion` | `admin`), `doctores_asignados`.
+- `DAT-08` **UsuarioRecepcion**: `nombre`, `correo`, `hash_password`, `rol` (`recepcion` | `admin`), `doctores_asignados`
+  (arreglo de IDs de doctor; `recepcion` solo ve esos doctores, `admin` ve todos y gestiona doctores y usuarios).
 - `DAT-09` **LogAuditoria**: `entidad`, `id_entidad`, `accion`, `actor` (`usuario:<id>` | `ia:<doctor_id>` | `sistema`),
   `cambios` (JSON **sin** campos cifrados en claro), `fecha`. Append-only.
 
@@ -92,12 +94,14 @@ Todas las tablas incluyen `id` (UUID), `creado_en`, `actualizado_en`, `eliminado
 - `WA-03` Idempotencia: Meta reintenta. Guardar `message.id` en Redis (`SET NX`, TTL 48 h); si existe, ignorar.
 - `WA-04` Solo se aceptan mensajes de números registrados como Doctor. Otros → se ignoran y se registran.
 - `WA-05` Tipos soportados: `text` y `audio`. Otros → respuesta cortés "solo texto o nota de voz".
-- `WA-06` Encolar en Celery y responder 200 de inmediato.
+- `WA-06` Encolar en Celery y responder 200 de inmediato. Si la cola no está disponible se responde 503
+  y se libera la marca de idempotencia, para que el reintento de Meta no pierda el mensaje.
 
 ### 3.2 Pipeline de audio
 - `IA-01` Worker: `GET /{media_id}` con Bearer Token → URL; `GET` a la URL → archivo `.ogg`.
 - `IA-02` El audio se envía a Gemini en memoria (bytes inline). **No se persiste en disco ni en BD.**
-- `IA-03` Límite de tamaño/duración configurable [DEFAULT 2 min]; si excede, pedir que lo divida.
+- `IA-03` Límite de tamaño/duración configurable [DEFAULT 2 min, 5 MB]; si excede, pedir que lo divida.
+  La duración se lee de la cabecera OGG, sin decodificar el audio.
 
 ### 3.3 Contexto
 - `IA-04` Historial por doctor en Redis: clave `chat:{doctor_id}`, últimos N turnos [DEFAULT 10], TTL [DEFAULT 2 h].
@@ -108,7 +112,7 @@ Todas las tablas incluyen `id` (UUID), `creado_en`, `actualizado_en`, `eliminado
 | ID | Tool | Comportamiento |
 |---|---|---|
 | `IA-06` | `buscar_paciente(nombre)` | Busca por `nombre_normalizado`. Devuelve 0, 1 o varias coincidencias. |
-| `IA-07` | `consultar_disponibilidad(fecha, duracion_minutos)` | Devuelve huecos libres del doctor. |
+| `IA-07` | `consultar_disponibilidad(fecha, duracion_minutos)` | Devuelve huecos libres del doctor dentro de la jornada [DEFAULT 08:00–20:00 en su zona]. |
 | `IA-08` | `agendar_cita(id_paciente \| nombre_paciente_nuevo, fecha_hora_iso, duracion_minutos, motivo)` | Crea cita. Si el paciente es nuevo, lo crea. Si choca (`DAT-05`), devuelve alternativas. |
 | `IA-09` | `crear_recordatorio_tarea(fecha_hora_iso, descripcion_tarea)` | Crea `Recordatorio`. |
 | `IA-10` | `delegar_a_recepcion(instruccion_literal)` | Crea `AlertaRecepcion`. |
@@ -118,13 +122,17 @@ Todas las tablas incluyen `id` (UUID), `creado_en`, `actualizado_en`, `eliminado
   paciente y el horario está libre. Se **delega a recepción** si: varias coincidencias de paciente sin
   resolver, cancelaciones/reprogramaciones, o cualquier acción que implique contactar al paciente.
 - `IA-13` Toda acción de la IA responde al doctor con confirmación en texto (ej. "Agendé a Ana López mañana 17:00–17:30").
-- `IA-14` Límite de iteraciones de function calling por mensaje [DEFAULT 5].
+- `IA-14` Límite de iteraciones de function calling por mensaje [DEFAULT 5]. Si se alcanza sin terminar,
+  la instrucción se delega a recepción y se avisa al doctor.
 
 ### 3.5 Cierre nocturno y recordatorios
 - `IA-15` Beat revisa cada 15 min qué doctores llegaron a su `hora_cierre_diario` local y encola el resumen.
 - `IA-16` El resumen se envía con **plantilla aprobada por Meta** (fuera de la ventana de 24 h solo se permiten plantillas).
 - `IA-17` Se guarda en Redis que se hizo la pregunta de cierre, para interpretar la respuesta del doctor en contexto.
 - `IA-18` Recordatorios (`DAT-06`) se envían a su hora; si la ventana de 24 h está cerrada, usar plantilla.
+  La ventana se registra en Redis (`wa_ventana:{doctor_id}`, TTL 24 h) con cada mensaje entrante del doctor.
+- `IA-19` Plantillas de Meta: `cierre_diario` (doctor, atendidas, sin cerrar, citas de mañana) y
+  `recordatorio_tarea` (descripción). Nombres e idioma configurables por entorno.
 
 ### 3.6 Google Calendar
 - `GC-01` Al crear/modificar/cancelar una cita, el worker sincroniza el evento (sin datos clínicos en el evento: solo "Consulta" + nombre del paciente [DEFAULT]).
@@ -146,6 +154,10 @@ Estilo: Hospital Information System, minimalista, premium. Cero estética comerc
 - `UI-07` Calendario time-blocking por columnas (una por doctor), intervalos de 15/30 min seleccionables.
 - `UI-08` Las horas se muestran en la zona del doctor de cada columna.
 - `UI-09` Refresco: polling cada 30 s [DEFAULT] (WebSocket en una fase posterior si se pide).
+- `UI-10` Desde el panel lateral (`UI-06`) recepción cambia el estado de la cita (confirmar, en espera,
+  en consulta, atendida, no asistió, cancelar).
+- `UI-11` Diálogo "Nueva cita": doctor, paciente (existente por nombre o nuevo), fecha y hora en la zona
+  del doctor, duración y motivo. Si el horario está ocupado muestra las alternativas.
 
 ---
 
@@ -154,15 +166,19 @@ Estilo: Hospital Information System, minimalista, premium. Cero estética comerc
 - `SEG-01` Cifrado de campos médicos con un `TypeDecorator` de SQLAlchemy usando `MultiFernet`
   (llaves en `FERNET_KEYS`, la primera cifra, todas descifran). Los campos cifrados **no son buscables**.
 - `SEG-02` Logs sin PHI: filtro de logging que redacta campos sensibles y contenido de mensajes.
-- `SEG-03` Autenticación JWT para `api_core`; los webhooks se protegen solo con firma de Meta.
-- `SEG-04` Rate limiting por doctor en Redis.
+- `SEG-03` Autenticación JWT para `api_core` (passwords con scrypt); los webhooks se protegen solo con firma
+  de Meta. Con `ENTORNO=produccion` el servicio no arranca sin `FERNET_KEYS` o con `JWT_SECRET` de menos de 32 caracteres.
+- `SEG-04` Rate limiting por doctor en Redis [DEFAULT 20 mensajes por minuto]. El proxy limita además las
+  peticiones por IP hacia `api_core`.
 - `SEG-05` Referencia normativa: NOM-024-SSA3 y LFPDPPP (México); HIPAA como guía. Este sistema no
   sustituye una revisión legal formal.
 - `DEP-01` Docker Compose con todos los servicios de `ARQ-*`, healthchecks y volúmenes para Postgres.
 - `DEP-02` Proxy inverso con TLS (Let's Encrypt).
 - `DEP-03` `.env.example` con: `DATABASE_URL`, `REDIS_URL`, `FERNET_KEYS`, `JWT_SECRET`, `GEMINI_API_KEY`,
   `GEMINI_MODEL`, `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_VERIFY_TOKEN`, `WA_APP_SECRET`,
-  `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+  `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Además: `ENTORNO`, `POSTGRES_PASSWORD`,
+  `WA_API_VERSION`, `WA_PLANTILLA_CIERRE`, `WA_PLANTILLA_RECORDATORIO`, `WA_PLANTILLA_IDIOMA`, `DOMINIO`,
+  `ACME_EMAIL`, `API_CORE_URL`.
 
 ---
 
@@ -187,3 +203,12 @@ Cada fase termina con tests pasando y `docker compose up` funcionando. No avanza
 | Fecha | ID | Cambio |
 |---|---|---|
 | 2026-11-10 | — | Versión inicial reestructurada. |
+| 2026-11-10 | ARQ-06 | Se eligió Traefik; rutas `/api`, `/webhooks` y UI; perfil `produccion`. |
+| 2026-11-10 | DAT-06, DAT-07 | Textos libres del doctor (`descripcion`, `mensaje_ia`, `instruccion_original`) van cifrados. |
+| 2026-11-10 | DAT-08 | `doctores_asignados` como arreglo de IDs; permisos por rol. |
+| 2026-11-10 | WA-06 | Respuesta 503 si no se puede encolar. |
+| 2026-11-10 | IA-03, IA-07, IA-14, IA-18 | Defaults concretos: límite de audio, jornada, delegación al agotar pasos, ventana de 24 h en Redis. |
+| 2026-11-10 | IA-19 | Nuevo: definición de las plantillas de Meta. |
+| 2026-11-10 | UI-10, UI-11 | Nuevos: cambio de estado desde el panel y diálogo "Nueva cita". |
+| 2026-11-10 | SEG-03, SEG-04 | scrypt, validación de secretos en producción, default de rate limiting. |
+| 2026-11-10 | DEP-03 | Variables de entorno adicionales. |

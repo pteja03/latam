@@ -18,12 +18,12 @@ log = logging.getLogger(__name__)
 
 TTL_VENTANA_SEG = 24 * 3600
 MSJ_TIPO_NO_SOPORTADO = (
-    "Por ahora solo puedo procesar mensajes de texto o notas de voz. ¿Me lo envias asi, por favor?"
+    "Por ahora solo puedo procesar mensajes de texto o notas de voz. ¿Me lo envías así, por favor?"
 )
 MSJ_AUDIO_LARGO = (
     "La nota de voz es demasiado larga. ¿Puedes dividirla en notas de menos de {minutos} minutos?"
 )
-MSJ_LIMITE = "Recibi muchos mensajes seguidos. Espera un minuto y vuelve a intentarlo."
+MSJ_LIMITE = "Recibí muchos mensajes seguidos. Espera un minuto y vuelve a intentarlo."
 MSJ_ERROR = "No pude procesar tu mensaje en este momento. Intenta de nuevo en unos minutos."
 
 

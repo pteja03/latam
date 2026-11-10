@@ -14,7 +14,7 @@ from app.repositorios import auditoria
 from app.servicios import agenda, alertas
 from app.servicios import pacientes as servicio_pacientes
 
-MENSAJE_DELEGACION = "El doctor dio una instruccion que debe ejecutar recepcion."
+MENSAJE_DELEGACION = "El doctor dio una instrucción que debe ejecutar recepción."
 
 
 class ArgumentoInvalido(Exception):

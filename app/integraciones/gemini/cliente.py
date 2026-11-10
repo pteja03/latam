@@ -54,3 +54,19 @@ class ClienteGemini:
         contenido = respuesta.candidates[0].content if respuesta.candidates else None
         texto = None if llamadas else respuesta.text
         return RespuestaIA(texto=texto, llamadas=llamadas, contenido=contenido)
+
+
+class ClienteGeminiPerezoso:
+    """Crea el cliente real en el primer uso.
+
+    Asi un mensaje que nunca llega a la IA (remitente no registrado, tipo no soportado)
+    no depende de la configuracion de Gemini.
+    """
+
+    def __init__(self) -> None:
+        self._cliente: ClienteGemini | None = None
+
+    async def generar(self, *, sistema: str, contenidos: list[Any]) -> RespuestaIA:
+        if self._cliente is None:
+            self._cliente = ClienteGemini()
+        return await self._cliente.generar(sistema=sistema, contenidos=contenidos)
