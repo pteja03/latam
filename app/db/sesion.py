@@ -15,7 +15,11 @@ from app.core.config import obtener_config
 
 @lru_cache
 def obtener_engine() -> AsyncEngine:
-    return create_async_engine(obtener_config().database_url, pool_pre_ping=True)
+    return create_async_engine(
+        obtener_config().database_url,
+        pool_pre_ping=True,
+        hide_parameters=True,  # los errores SQL nunca muestran valores (pueden ser PHI)
+    )
 
 
 @lru_cache

@@ -31,7 +31,9 @@ class ContextoTarea:
 @asynccontextmanager
 async def contexto_tarea() -> AsyncIterator[ContextoTarea]:
     """Engine + sesion + Redis de vida igual a la tarea. Confirma al salir sin error."""
-    engine = create_async_engine(obtener_config().database_url, poolclass=NullPool)
+    engine = create_async_engine(
+        obtener_config().database_url, poolclass=NullPool, hide_parameters=True
+    )
     redis = crear_redis()
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as sesion:
