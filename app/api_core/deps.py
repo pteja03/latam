@@ -17,7 +17,9 @@ from app.repositorios import usuarios as repo_usuarios
 
 _bearer = HTTPBearer(auto_error=False)
 
-Sesion = Annotated[AsyncSession, Depends(obtener_sesion)]
+# scope="function": la transaccion se confirma ANTES de enviar la respuesta. Sin esto, una
+# peticion inmediata (crear cuenta y luego iniciar sesion) podia no ver lo recien guardado.
+Sesion = Annotated[AsyncSession, Depends(obtener_sesion, scope="function")]
 
 
 async def usuario_actual(

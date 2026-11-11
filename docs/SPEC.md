@@ -39,7 +39,7 @@
   segundo plano dentro del mismo proceso (sin Celery) y un planificador propio (sin Beat). Redis se
   sustituye por un almacén clave-valor cifrado sobre PostgreSQL (`almacen_clave_valor`): es un caché
   técnico con caducidad y es la única tabla donde se borran filas físicamente.
-- `ARQ-09` **PostgreSQL embebido**: el instalador trae los binarios; el servidor local inicializa y
+- `ARQ-09` **PostgreSQL embebido** (versión 16 o superior): el instalador trae los binarios; el servidor local inicializa y
   arranca la base en `%LOCALAPPDATA%\CREE Agenda\pgdata` (puerto 54329, solo localhost) y aplica las
   migraciones al iniciar.
 - `ARQ-10` **Túnel**: con un token de Cloudflare Tunnel configurado, el servidor local abre el túnel que
