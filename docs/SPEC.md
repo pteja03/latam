@@ -33,6 +33,22 @@
 - `ARQ-06` **proxy** — Traefik con TLS (HTTPS obligatorio para Meta y Google). Rutas: `/api` → api_core,
   `/webhooks` → api_webhooks, resto → ui. Solo se levanta con el perfil `produccion` de Compose.
 
+### 1.2b Instalación local para Windows (todo en una PC)
+- `ARQ-08` **Modo local** (`MODO_LOCAL=true`): alternativa a Docker para una sola PC con Windows. Un único
+  proceso sirve `api_core` (127.0.0.1:8765) y `api_webhooks` (127.0.0.1:8766), ejecuta las tareas en
+  segundo plano dentro del mismo proceso (sin Celery) y un planificador propio (sin Beat). Redis se
+  sustituye por un almacén clave-valor cifrado sobre PostgreSQL (`almacen_clave_valor`): es un caché
+  técnico con caducidad y es la única tabla donde se borran filas físicamente.
+- `ARQ-09` **PostgreSQL embebido**: el instalador trae los binarios; el servidor local inicializa y
+  arranca la base en `%LOCALAPPDATA%\CREE Agenda\pgdata` (puerto 54329, solo localhost) y aplica las
+  migraciones al iniciar.
+- `ARQ-10` **Túnel**: con un token de Cloudflare Tunnel configurado, el servidor local abre el túnel que
+  da al webhook la dirección https pública que exige Meta. Solo debe publicarse el puerto del webhook.
+- `ARQ-11` **App de escritorio**: `CreeAgenda.exe` abre la UI Flet como ventana nativa y arranca el servidor
+  local si no está en marcha; `--servidor` corre solo los servicios y `--detener` los apaga. La UI sigue
+  hablando con `api_core` por HTTP (nunca con la BD).
+- En modo local no aplican `ARQ-02..04` ni `ARQ-06` como contenedores; la lógica de negocio es la misma.
+
 ### 1.3 Estructura de carpetas
 ```
 app/
@@ -47,6 +63,8 @@ app/
   api_webhooks/  # routers
   worker/        # tareas Celery
 ui/              # Flet
+escritorio/      # modo local: lanzador, servidor único, PostgreSQL embebido, túnel
+instalador/      # empaquetado de Windows (PyInstaller + Inno Setup)
 migrations/      # Alembic
 tests/
 docs/SPEC.md
@@ -156,6 +174,12 @@ Estilo: Hospital Information System, minimalista, premium. Cero estética comerc
 - `UI-09` Refresco: polling cada 30 s [DEFAULT] (WebSocket en una fase posterior si se pide).
 - `UI-10` Desde el panel lateral (`UI-06`) recepción cambia el estado de la cita (confirmar, en espera,
   en consulta, atendida, no asistió, cancelar).
+- `UI-12` **Ajustes** (solo rol admin): Integraciones (Gemini, WhatsApp, conexión pública, Google Calendar),
+  Doctores (alta, edición y conexión de Google Calendar) y Usuarios (alta). Los secretos son de solo
+  escritura: la API nunca los devuelve, solo indica si están configurados. Editables únicamente en modo
+  local (`PUT /api/ajustes`); con Docker se muestran en solo lectura porque se definen en `.env`.
+- `UI-13` **Instalación inicial** (modo local): mientras no exista ningún usuario, la app pide crear la cuenta
+  de administración (`POST /api/instalacion/admin`). Después ese endpoint queda cerrado.
 - `UI-11` Diálogo "Nueva cita": doctor, paciente (existente por nombre o nuevo), fecha y hora en la zona
   del doctor, duración y motivo. Si el horario está ocupado muestra las alternativas.
 
@@ -174,6 +198,14 @@ Estilo: Hospital Information System, minimalista, premium. Cero estética comerc
   sustituye una revisión legal formal.
 - `DEP-01` Docker Compose con todos los servicios de `ARQ-*`, healthchecks y volúmenes para Postgres.
 - `DEP-02` Proxy inverso con TLS (Let's Encrypt).
+- `DEP-04` **Instalador de Windows**: `instalador/construir.ps1` genera `CREE-Agenda-Instalador-<versión>.exe`
+  (PyInstaller + Inno Setup) con la app, PostgreSQL y el cliente del túnel. Instala por usuario, sin
+  permisos de administrador, y puede iniciar los servicios al encender la PC. La configuración se genera
+  sola en el primer arranque (`config.env` con llaves de cifrado, sesión y base de datos). Los datos de
+  `%LOCALAPPDATA%\CREE Agenda` no se borran al actualizar ni al desinstalar. Un workflow de GitHub Actions
+  lo construye en Windows y corre una prueba de humo del ejecutable.
+- `SEG-06` En modo local la configuración y la llave de cifrado viven en `config.env`, dentro del perfil del
+  usuario de Windows. Debe respaldarse: sin `FERNET_KEYS` los datos médicos no se pueden leer.
 - `DEP-03` `.env.example` con: `DATABASE_URL`, `REDIS_URL`, `FERNET_KEYS`, `JWT_SECRET`, `GEMINI_API_KEY`,
   `GEMINI_MODEL`, `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_VERIFY_TOKEN`, `WA_APP_SECRET`,
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Además: `ENTORNO`, `POSTGRES_PASSWORD`,
@@ -196,6 +228,7 @@ Cada fase termina con tests pasando y `docker compose up` funcionando. No avanza
 | 6 | Google Calendar | GC-* |
 | 7 | UI Flet | UI-* |
 | 8 | Proxy, TLS, hardening, rate limiting | DEP-02, SEG-04 |
+| 9 | App de escritorio e instalador de Windows (modo local), Ajustes | ARQ-08..11, UI-12/13, DEP-04, SEG-06 |
 
 ---
 
@@ -212,3 +245,5 @@ Cada fase termina con tests pasando y `docker compose up` funcionando. No avanza
 | 2026-11-10 | UI-10, UI-11 | Nuevos: cambio de estado desde el panel y diálogo "Nueva cita". |
 | 2026-11-10 | SEG-03, SEG-04 | scrypt, validación de secretos en producción, default de rate limiting. |
 | 2026-11-10 | DEP-03 | Variables de entorno adicionales. |
+| 2026-11-11 | ARQ-08..11, DEP-04, SEG-06 | Nuevo: instalación local para Windows sin Docker (sin Redis ni Celery), PostgreSQL embebido, túnel e instalador. |
+| 2026-11-11 | UI-12, UI-13 | Nuevos: vista de Ajustes e instalación inicial; endpoints `/api/ajustes` e `/api/instalacion/*`. |

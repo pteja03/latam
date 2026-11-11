@@ -3,28 +3,17 @@
 import logging
 import uuid
 
-import httpx
 from celery import Task
 
-from app.integraciones.google_calendar.cliente import ClienteGoogleCalendar
-from app.servicios import sync_google
-from app.worker.async_helper import contexto_tarea, run_async
+from app.worker.async_helper import run_async
 from app.worker.celery_app import celery_app
+from app.worker.trabajos import marcar_error_sync as _marcar_error
+from app.worker.trabajos import sincronizar_cita as _sincronizar
 
 log = logging.getLogger(__name__)
 
 MAX_REINTENTOS = 5
 BACKOFF_BASE_SEG = 30
-
-
-async def _sincronizar(id_cita: uuid.UUID) -> None:
-    async with contexto_tarea() as ctx, httpx.AsyncClient(timeout=20) as http:
-        await sync_google.sincronizar_cita(ctx.sesion, id_cita, ClienteGoogleCalendar(http))
-
-
-async def _marcar_error(id_cita: uuid.UUID) -> None:
-    async with contexto_tarea() as ctx:
-        await sync_google.marcar_error(ctx.sesion, id_cita)
 
 
 @celery_app.task(

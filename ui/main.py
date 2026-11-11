@@ -14,10 +14,12 @@ import flet as ft
 
 from ui import componentes as comp
 from ui import tema
+from ui.ajustes import VistaAjustes
 from ui.api import ClienteApi, ErrorApi, SesionExpirada
 
 SEGUNDOS_POLLING = int(os.environ.get("UI_POLLING_SEG", "30"))  # UI-09
 ANCHO_PANEL = 360
+SEGUNDOS_ESPERA_SERVIDOR = 180
 
 _TRANSICIONES: list[tuple[str, str]] = [
     ("confirmada", "Confirmar"),
@@ -47,6 +49,7 @@ class AppRecepcion:
         self.actualizado: datetime | None = None
         self._huella: Any = None
         self._sondeo_activo = False
+        self.ajustes = VistaAjustes(self)
 
     # ================= ciclo de vida =================
     def iniciar(self) -> None:
@@ -56,7 +59,146 @@ class AppRecepcion:
         page.theme_mode = ft.ThemeMode.LIGHT
         page.bgcolor = tema.FONDO
         page.padding = 0
-        self._mostrar_login()
+        try:  # solo aplica a la app de escritorio
+            page.window.width, page.window.height = 1440, 900
+            page.window.min_width, page.window.min_height = 1100, 700
+        except Exception:  # noqa: S110
+            pass
+        self._mostrar_arranque()
+        page.run_task(self._arrancar)
+
+    # ================= arranque e instalacion inicial (UI-13) =================
+    def _pantalla_centrada(self, contenido: ft.Control) -> None:
+        self.page.controls = [
+            ft.Container(
+                content=contenido, alignment=ft.Alignment.CENTER, expand=True, bgcolor=tema.FONDO
+            )
+        ]
+        self.page.update()
+
+    def _mostrar_arranque(self, error: str | None = None) -> None:
+        async def reintentar(_: Any) -> None:
+            self._mostrar_arranque()
+            await self._arrancar()
+
+        estado: list[ft.Control] = (
+            [
+                tema.texto(error, 14, color=tema.PELIGRO, text_align=ft.TextAlign.CENTER),
+                tema.boton_primario("Reintentar", reintentar),
+            ]
+            if error
+            else [
+                ft.ProgressRing(width=28, height=28, stroke_width=3, color=tema.PRIMARIO),
+                tema.texto("Iniciando servicios de la agenda…", 14, color=tema.TEXTO_SUAVE),
+            ]
+        )
+        self._pantalla_centrada(
+            ft.Column(
+                [_marca(grande=True), ft.Container(height=8), *estado],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=16,
+                width=420,
+            )
+        )
+
+    async def _arrancar(self) -> None:
+        """Espera a que el servidor responda (en la primera ejecucion prepara la base de datos)."""
+        estado = None
+        for _ in range(SEGUNDOS_ESPERA_SERVIDOR):
+            try:
+                estado = await self.api.estado_instalacion()
+                break
+            except ErrorApi:
+                await asyncio.sleep(1)
+        if estado is None:
+            self._mostrar_arranque(
+                "No se pudo iniciar el servidor de la agenda. Revisa la carpeta de registros "
+                "e inténtalo de nuevo."
+            )
+        elif estado["requiere_admin"]:
+            self._mostrar_instalacion()
+        else:
+            self._mostrar_login()
+
+    def _mostrar_instalacion(self) -> None:
+        nombre = tema.campo("Tu nombre", autofocus=True)
+        correo = tema.campo("Correo", prefix_icon=ft.Icons.MAIL_OUTLINE)
+        password = tema.campo(
+            "Contraseña (mínimo 8 caracteres)",
+            password=True,
+            can_reveal_password=True,
+            prefix_icon=ft.Icons.LOCK_OUTLINE,
+        )
+        repetir = tema.campo(
+            "Repite la contraseña", password=True, prefix_icon=ft.Icons.LOCK_OUTLINE
+        )
+        error = tema.texto("", 13, color=tema.PELIGRO, visible=False)
+
+        def fallar(mensaje: str) -> None:
+            error.value, error.visible = mensaje, True
+            self.page.update()
+
+        async def crear(_: Any = None) -> None:
+            if len((nombre.value or "").strip()) < 1 or "@" not in (correo.value or ""):
+                return fallar("Escribe tu nombre y un correo válido.")
+            if len(password.value or "") < 8:
+                return fallar("La contraseña debe tener al menos 8 caracteres.")
+            if password.value != repetir.value:
+                return fallar("Las contraseñas no coinciden.")
+            try:
+                await self.api.crear_admin_inicial(
+                    nombre.value.strip(), correo.value.strip(), password.value
+                )
+                self.usuario = await self.api.login(correo.value.strip(), password.value)
+            except ErrorApi as fallo:
+                return fallar(fallo.detalle)
+            self.vista = "ajustes"  # siguiente paso natural: configurar integraciones y doctores
+            await self.ajustes.cargar()
+            await self.refrescar(forzar=True)
+            self._iniciar_sondeo()
+            self._aviso("Cuenta creada. Configura las integraciones y registra a los doctores.")
+            return None
+
+        repetir.on_submit = crear
+        self._pantalla_centrada(
+            tema.tarjeta(
+                ft.Column(
+                    [
+                        _marca(grande=True),
+                        ft.Container(height=4),
+                        tema.titulo("Configuración inicial", 22),
+                        tema.texto(
+                            "Crea la cuenta de administración de esta instalación. Con ella podrás "
+                            "configurar las integraciones, registrar doctores y dar de alta al "
+                            "personal de recepción.",
+                            13,
+                            color=tema.TEXTO_SUAVE,
+                        ),
+                        ft.Container(height=8),
+                        nombre,
+                        correo,
+                        password,
+                        repetir,
+                        error,
+                        ft.Container(height=4),
+                        ft.Row(
+                            [tema.boton_primario("Crear cuenta y continuar", crear, expand=True)]
+                        ),
+                    ],
+                    spacing=12,
+                    tight=True,
+                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                ),
+                relleno=36,
+                width=440,
+            )
+        )
+
+    def _iniciar_sondeo(self) -> None:
+        if not self._sondeo_activo:
+            self._sondeo_activo = True
+            self.page.run_task(self._sondeo)
 
     def _aviso(self, mensaje: str, error: bool = False) -> None:
         self.page.show_dialog(
@@ -100,9 +242,7 @@ class AppRecepcion:
                 self.page.update()
                 return
             await self.refrescar(forzar=True)
-            if not self._sondeo_activo:
-                self._sondeo_activo = True
-                self.page.run_task(self._sondeo)
+            self._iniciar_sondeo()
 
         password.on_submit = entrar
         correo.on_submit = entrar
@@ -197,6 +337,8 @@ class AppRecepcion:
         if self.cita_sel:
             self.cita_sel = next((c for c in self.citas if c["id"] == self.cita_sel["id"]), None)
         huella = (datos, self.vista, self.id_doctor, self.dia, self.intervalo)
+        if self.vista == "ajustes" and not forzar:
+            return  # no se redibuja mientras se editan ajustes
         if forzar or huella != self._huella:  # sin cambios no se redibuja (conserva el scroll)
             self._huella = huella
             self._dibujar()
@@ -211,6 +353,8 @@ class AppRecepcion:
     # ================= acciones =================
     async def _ir(self, vista: str) -> None:
         self.vista = vista
+        if vista == "ajustes":
+            await self.ajustes.cargar()
         await self.refrescar(forzar=True)
 
     async def _filtrar_doctor(self, evento: ft.Event[ft.Dropdown]) -> None:
@@ -383,6 +527,7 @@ class AppRecepcion:
             "dashboard": self._vista_dashboard,
             "agenda": self._vista_agenda,
             "alertas": self._vista_alertas,
+            "ajustes": self.ajustes.construir,
         }[self.vista]()
         zona_principal = ft.Container(
             content=ft.Column([self._barra_superior(), cuerpo], spacing=20, expand=True),
@@ -444,6 +589,15 @@ class AppRecepcion:
                     item("dashboard", "Dashboard", ft.Icons.DASHBOARD_OUTLINED),
                     item("agenda", "Agenda", ft.Icons.CALENDAR_MONTH_OUTLINED),
                     item("alertas", "Alertas IA", ft.Icons.INBOX_OUTLINED, pendientes),
+                    *(
+                        [
+                            ft.Container(height=10),
+                            tema.etiqueta("  Administración"),
+                            item("ajustes", "Ajustes", ft.Icons.SETTINGS_OUTLINED),
+                        ]
+                        if self.usuario["rol"] == "admin"
+                        else []
+                    ),
                     ft.Container(expand=True),
                     ft.Divider(height=1, color=tema.BORDE),
                     ft.Row(
@@ -506,6 +660,7 @@ class AppRecepcion:
             "dashboard": ("Dashboard", comp.fecha_larga(date.today())),
             "agenda": ("Agenda", comp.fecha_larga(self.dia)),
             "alertas": ("Alertas IA", "Instrucciones que la IA delegó a recepción"),
+            "ajustes": ("Ajustes", "Integraciones, doctores y usuarios de esta instalación"),
         }
         principal, secundario = titulos[self.vista]
         opciones = [ft.DropdownOption(key="todos", text="Todos los doctores")] + [
@@ -535,17 +690,25 @@ class AppRecepcion:
                     tooltip="Actualizar ahora",
                     on_click=recargar,
                 ),
-                ft.Dropdown(
-                    value=self.id_doctor or "todos",
-                    options=opciones,
-                    on_select=self._filtrar_doctor,
-                    width=230,
-                    text_size=13,
-                    border=tema.borde_campo(),
-                    bgcolor=tema.TARJETA,
-                    dense=True,
+                *(
+                    []
+                    if self.vista == "ajustes"
+                    else [
+                        ft.Dropdown(
+                            value=self.id_doctor or "todos",
+                            options=opciones,
+                            on_select=self._filtrar_doctor,
+                            width=230,
+                            text_size=13,
+                            border=tema.borde_campo(),
+                            bgcolor=tema.TARJETA,
+                            dense=True,
+                        ),
+                        tema.boton_primario(
+                            "Nueva cita", self._dialogo_nueva_cita, icon=ft.Icons.ADD
+                        ),
+                    ]
                 ),
-                tema.boton_primario("Nueva cita", self._dialogo_nueva_cita, icon=ft.Icons.ADD),
             ],
             spacing=12,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,

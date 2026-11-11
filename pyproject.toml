@@ -17,11 +17,15 @@ dependencies = [
     "google-genai>=1.0",
     "httpx>=0.27",
     "pyjwt>=2.8",
+    # Windows no trae la base de zonas horarias IANA que usa zoneinfo.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 # Web: flet + flet-web. Para escritorio instalar ademas flet-desktop.
 ui = ["flet>=1.0", "flet-web>=1.0"]
+# Empaquetado de la app de escritorio para Windows (ver instalador/).
+escritorio = ["flet>=1.0", "flet-desktop>=1.0", "flet-cli>=1.0", "pyinstaller>=6", "tzdata"]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "flet>=1.0", "flet-web>=1.0"]
 
 [build-system]
@@ -29,7 +33,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["app*", "ui*"]
+include = ["app*", "ui*", "escritorio*"]
 
 [tool.ruff]
 line-length = 100

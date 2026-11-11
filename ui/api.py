@@ -98,3 +98,33 @@ class ClienteApi:
 
     async def resolver_alerta(self, id_alerta: str) -> dict[str, Any]:
         return await self._pedir("POST", f"/alertas/{id_alerta}/resolver")
+
+    # ---------- instalacion y ajustes (UI-12, UI-13) ----------
+    async def estado_instalacion(self) -> dict[str, bool]:
+        return await self._pedir("GET", "/instalacion/estado")
+
+    async def crear_admin_inicial(self, nombre: str, correo: str, password: str) -> dict[str, Any]:
+        cuerpo = {"nombre": nombre, "correo": correo, "password": password}
+        return await self._pedir("POST", "/instalacion/admin", json=cuerpo)
+
+    async def ajustes(self) -> dict[str, Any]:
+        return await self._pedir("GET", "/ajustes")
+
+    async def guardar_ajustes(self, cambios: dict[str, str]) -> dict[str, Any]:
+        return await self._pedir("PUT", "/ajustes", json=cambios)
+
+    async def crear_doctor(self, datos: dict[str, Any]) -> dict[str, Any]:
+        return await self._pedir("POST", "/doctores", json=datos)
+
+    async def actualizar_doctor(self, id_doctor: str, datos: dict[str, Any]) -> dict[str, Any]:
+        return await self._pedir("PATCH", f"/doctores/{id_doctor}", json=datos)
+
+    async def url_google(self, id_doctor: str) -> str:
+        datos = await self._pedir("GET", "/google/oauth/iniciar", params={"id_doctor": id_doctor})
+        return datos["url"]
+
+    async def usuarios(self) -> list[dict[str, Any]]:
+        return await self._pedir("GET", "/usuarios")
+
+    async def crear_usuario(self, datos: dict[str, Any]) -> dict[str, Any]:
+        return await self._pedir("POST", "/usuarios", json=datos)

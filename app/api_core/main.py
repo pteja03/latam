@@ -2,7 +2,16 @@
 
 from fastapi import APIRouter, FastAPI
 
-from app.api_core.routers import alertas, auth, citas, dashboard, doctores, google, pacientes
+from app.api_core.routers import (
+    ajustes,
+    alertas,
+    auth,
+    citas,
+    dashboard,
+    doctores,
+    google,
+    pacientes,
+)
 from app.core.config import obtener_config
 from app.core.logging import configurar_logging
 
@@ -17,7 +26,7 @@ app = FastAPI(
 )
 
 api = APIRouter(prefix="/api")
-for modulo in (auth, doctores, pacientes, citas, alertas, dashboard, google):
+for modulo in (auth, doctores, pacientes, citas, alertas, dashboard, google, ajustes):
     api.include_router(modulo.router)
 app.include_router(api)
 

@@ -1,5 +1,6 @@
 """Configuracion central leida de variables de entorno (pydantic-settings)."""
 
+import os
 from functools import lru_cache
 
 from pydantic import model_validator
@@ -10,6 +11,12 @@ class Configuracion(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     entorno: str = "desarrollo"
+    # ARQ-08: instalacion "todo en una PC" (Windows). Sin Redis ni Celery: tareas en proceso.
+    modo_local: bool = False
+    puerto_api: int = 8765
+    puerto_webhooks: int = 8766
+    url_publica: str = ""  # direccion https publica que apunta al webhook (tunel)
+    tunel_token: str = ""  # token de Cloudflare Tunnel (opcional)
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agenda"
     redis_url: str = "redis://localhost:6379/0"
@@ -59,6 +66,14 @@ class Configuracion(BaseSettings):
         return [k.strip() for k in self.fernet_keys.split(",") if k.strip()]
 
 
+VARIABLE_ARCHIVO_CONFIG = "CREE_ARCHIVO_CONFIG"
+
+
+def ruta_archivo_config() -> str:
+    """Archivo de configuracion: `.env` o el que indique CREE_ARCHIVO_CONFIG (modo local)."""
+    return os.environ.get(VARIABLE_ARCHIVO_CONFIG, ".env")
+
+
 @lru_cache
 def obtener_config() -> Configuracion:
-    return Configuracion()
+    return Configuracion(_env_file=ruta_archivo_config())
