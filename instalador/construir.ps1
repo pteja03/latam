@@ -18,9 +18,9 @@ flet pack escritorio/lanzador.py -y -D -n CreeAgenda `
   --product-name "CREE Agenda" --file-description "CREE Agenda" `
   --company-name "Clinica CREE" --product-version $version --file-version $version `
   --add-data "migrations;migrations" `
-  --pyinstaller-build-args "--paths=." "--collect-submodules=app" "--collect-submodules=ui" `
-    "--collect-submodules=escritorio" "--collect-submodules=uvicorn" `
-    "--collect-submodules=alembic" "--collect-all=tzdata" "--hidden-import=asyncpg.pgproto.pgproto"
+  -- --paths=. --collect-submodules=app --collect-submodules=ui `
+  --collect-submodules=escritorio --collect-submodules=uvicorn `
+  --collect-submodules=alembic --collect-all=tzdata --hidden-import=asyncpg.pgproto.pgproto
 if ($LASTEXITCODE -ne 0) { throw "Fallo la construccion del ejecutable" }
 
 # ---------- 2. PostgreSQL portable ----------
